@@ -1,9 +1,19 @@
 import random
 import time
+import os
 from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask_session import Session 
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
+
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = './flask_sessions' 
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+
+Session(app) 
+
 attempts_dict = {}
 lockout_dict = {}
 
@@ -35,6 +45,7 @@ def index():
         phone = request.form['phone']
         if len(phone) != 11 or not phone.startswith("09"):
             return render_template_string(HTML_TEMPLATE, error="Please enter a valid phone number (starting with 09).")
+        
         attempts, lockout_time = get_attempts(phone)
         if attempts >= 3:
             if time.time() < lockout_time:
@@ -42,12 +53,14 @@ def index():
                 return render_template_string(HTML_TEMPLATE, error=f"Too many failed attempts. Please try again after {int(remaining_lockout_time)} seconds.")
             else:
                 save_attempts(phone, 0, 0)
+
         otp = generate_otp()
         otp_time = time.time() + 120 
         session['phone'] = phone
         session['otp'] = otp
         session['otp_time'] = otp_time
         session['otp_verified'] = False 
+        session.modified = True  # https://t.me/secbaz
         print(f"Generated OTP: {otp} for {phone}")
         return redirect(url_for('otp'))  
     
@@ -72,15 +85,18 @@ def otp():
         otp_time = session['otp_time']
         if time.time() > otp_time:
             return render_template_string(OTP_TEMPLATE, error="OTP expired. Please request a new one.", remaining_time=remaining_time, otp=otp, attempts=attempts)
-        
-        if otp == otp_input:
+
+        if otp == otp_input: 
             session['otp_verified'] = True
-            print(f"OTP Verified: {session['otp_verified']}")  # https://t.me/rmsup
+            session.modified = True  # https://t.me/rmsup
+            print(f"OTP Verified - Session Data: {session}")
+
             if is_rate_limited(phone):
                 remaining_time = lockout_dict[phone] - time.time()
                 return render_template_string(OTP_TEMPLATE, error=f"Rate limit applied. Please try again after {int(remaining_time)} seconds.", remaining_time=remaining_time, otp=otp, attempts=attempts)
+
             return redirect(url_for('dashboard'))
-        
+
         attempts += 1
         if attempts >= 3:
             lockout_time = time.time() + 600 
@@ -103,6 +119,7 @@ def dashboard():
     
     if not phone or not session.get('otp_verified'):
         return redirect(url_for('otp'))  
+    
     if is_rate_limited(phone):
         remaining_time = max(0, int(lockout_dict[phone] - time.time()))
         return render_template_string(OTP_TEMPLATE, error=f"Rate limit applied. Please try again after {remaining_time} seconds.")
@@ -122,9 +139,9 @@ def dashboard():
 def logout():
     session.pop('phone', None)
     session.pop('otp_verified', None)
+    session.modified = True  # https://t.me/rmsup
     return redirect(url_for('index'))
 
-# https://t.me/rmsup
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
