@@ -10,6 +10,8 @@ This is a Flask-based web application that implements a two-factor authenticatio
 <br>
 
 **`pip install Flask`**
+<br>
+**`pip install flask-session`**
 <li>Once the dependencies are installed, you can run the code:</li>
 <br>
 
